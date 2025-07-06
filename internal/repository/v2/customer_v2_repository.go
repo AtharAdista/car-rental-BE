@@ -145,7 +145,7 @@ func (r *CustomerV2Repository) UpdateCustomerById(id int, req *model.UpdateCusto
 			_, err = tx.Exec(`
 				UPDATE bookings_v2
 				SET discount = total_cost * $1 / 100.0
-				WHERE customer_id = $2
+				WHERE customer_id = $2 and finished=false
 			`, discountPercentage, customer.ID)
 
 			if err != nil {
@@ -161,7 +161,7 @@ func (r *CustomerV2Repository) UpdateCustomerById(id int, req *model.UpdateCusto
 			_, err = tx.Exec(`
 				UPDATE bookings_v2
 				SET discount = 0
-				WHERE customer_id = $1
+				WHERE customer_id = $1 and finished=false
 			`, customer.ID)
 			query += fmt.Sprintf(" membership_id=NULL,")
 			hasUpdate = true

@@ -167,7 +167,7 @@ func (r *DriverV2Repository) UpdateDriverById(id int, req *model.UpdateDriverV2R
 			_, err := tx.Exec(`
 				UPDATE bookings_v2
 				SET total_driver_cost = $1
-				WHERE id = $2
+				WHERE id = $2 AND finished = false
 			`, newCost, b.ID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update total_driver_cost: %w", err)
@@ -204,10 +204,21 @@ func (r *DriverV2Repository) DeleteAllDrivers() ([]model.DriverV2, error) {
 		SET driver_id = NULL,
 			total_driver_cost = 0,
 			booking_type_id = 1
-		WHERE driver_id IS NOT NULL
+		WHERE driver_id IS NOT NULL AND finished = false
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update bookings: %w", err)
+	}
+
+	_, err = tx.Exec(`
+		DELETE FROM drivers_incentives_v2
+		WHERE booking_id NOT IN (
+			SELECT id FROM bookings_v2
+			WHERE finished = true AND booking_type_id = 2
+		)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to clean up driver incentives: %w", err)
 	}
 
 	_, err = tx.Exec(`DELETE FROM drivers_v2`)
@@ -239,10 +250,21 @@ func (r *DriverV2Repository) DeleteDriverById(id int) (*model.DriverV2, error) {
 		SET driver_id = NULL,
 			total_driver_cost = 0,
 			booking_type_id = 1
-		WHERE driver_id = $1
+		WHERE driver_id = $1 AND finished = false
 	`, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update bookings: %w", err)
+	}
+
+	_, err = tx.Exec(`
+		DELETE FROM drivers_incentives_v2
+		WHERE booking_id IN (
+			SELECT id FROM bookings_v2
+			WHERE driver_id IS NULL AND finished = false
+		)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete related driver incentives: %w", err)
 	}
 
 	_, err = tx.Exec(`DELETE FROM drivers_v2 WHERE id = $1`, id)

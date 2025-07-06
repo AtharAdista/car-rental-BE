@@ -122,16 +122,22 @@ func (r *MembershipV2Repository) UpdateMembershipById(id int, req *model.UpdateM
 
 	if req.Discount != nil {
 		_, err = tx.Exec(`
-			UPDATE bookings_v2
-			SET discount = total_cost * $1 / 100.0
-			WHERE customer_id IN (
-				SELECT id FROM customers_v2 WHERE membership_id = $2
-			)
+		UPDATE bookings_v2
+		SET discount = total_cost * $1 / 100.0
+		WHERE finished = false
+		AND customer_id IN (
+			SELECT id FROM customers_v2
+			WHERE membership_id = $2
+		)
 		`, *req.Discount, id)
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to update booking discounts: %w", err)
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	membership, err := r.FindMembershipById(id)
@@ -140,9 +146,7 @@ func (r *MembershipV2Repository) UpdateMembershipById(id int, req *model.UpdateM
 		return nil, fmt.Errorf("failed to find membership: %w", err)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
-	}
+	
 
 	return membership, nil
 }
@@ -168,9 +172,14 @@ func (r *MembershipV2Repository) DeleteAllMembership() ([]model.MembershipV2, er
 	}
 
 	_, err = tx.Exec(`
-		UPDATE bookings_v2 SET discount = 0
-		WHERE customer_id IN (
-			SELECT id FROM customers_v2 WHERE membership_id IS NULL
+		UPDATE bookings_v2
+		SET discount = 0
+		WHERE finished = false
+		AND EXISTS (
+			SELECT 1
+			FROM customers_v2 c
+			WHERE c.id = bookings_v2.customer_id
+			AND c.membership_id IS NULL
 		)
 	`)
 	if err != nil {
@@ -212,9 +221,12 @@ func (r *MembershipV2Repository) DeleteMembershipById(id int) (*model.Membership
 	}
 
 	_, err = tx.Exec(`
-		UPDATE bookings_v2 SET discount = 0
-		WHERE customer_id IN (
-			SELECT id FROM customers_v2 WHERE membership_id IS NULL
+		UPDATE bookings_v2
+		SET discount = 0
+		WHERE finished = false
+		AND customer_id IN (
+			SELECT id FROM customers_v2
+			WHERE membership_id IS NULL
 		)
 	`)
 	if err != nil {

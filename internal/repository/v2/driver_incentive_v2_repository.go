@@ -51,7 +51,7 @@ func (r *DriverIncentiveV2Repository) FindDriverIncentiveById(id int) (*model.Dr
 	driversIncentives := &model.DriverIncentiveV2{}
 
 	err := r.db.QueryRow(`
-	SSELECT id, booking_id, incentive FROM drivers_incentives_v2 WHERE id=$1
+	SELECT id, booking_id, incentive FROM drivers_incentives_v2 WHERE id=$1
 	`, id).Scan(&driversIncentives.ID, &driversIncentives.BookingID, &driversIncentives.Incentive)
 
 	if err != nil {

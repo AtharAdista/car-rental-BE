@@ -80,13 +80,10 @@ func (r *CarsV2Repository) FindCarById(id int) (*model.CarV2, error) {
 }
 
 func (r *CarsV2Repository) UpdateCarById(id int, req *model.UpdateCarV2Req) (*model.CarV2, error) {
-
 	tx, err := r.db.Begin()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-
 	defer tx.Rollback()
 
 	query := "UPDATE cars_v2 SET"
@@ -100,36 +97,44 @@ func (r *CarsV2Repository) UpdateCarById(id int, req *model.UpdateCarV2Req) (*mo
 	}
 
 	if req.Stock != nil {
-		query += fmt.Sprintf(" stock = $%d,", argIdx)
+		query += fmt.Sprintf(" stock=$%d,", argIdx)
 		args = append(args, *req.Stock)
 		argIdx++
 	}
 
 	if req.DailyRent != nil {
-
 		rows, err := tx.Query(`
-        SELECT id, start_rent, end_rent, customer_id
-        FROM bookings_v2
-        WHERE cars_id = $1 AND finished = false
-   		`, id)
-
+			SELECT id, start_rent, end_rent, customer_id
+			FROM bookings_v2
+			WHERE cars_id = $1 AND finished = false
+		`, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query active bookings: %w", err)
 		}
 
-		defer rows.Close()
-
+		var bookings []struct {
+			ID         int
+			StartRent  time.Time
+			EndRent    time.Time
+			CustomerID int
+		}
 		for rows.Next() {
-			var bookingID int
-			var customerID int
-			var startRent, endRent time.Time
-
-			if err := rows.Scan(&bookingID, &startRent, &endRent, &customerID); err != nil {
+			var b struct {
+				ID         int
+				StartRent  time.Time
+				EndRent    time.Time
+				CustomerID int
+			}
+			if err := rows.Scan(&b.ID, &b.StartRent, &b.EndRent, &b.CustomerID); err != nil {
+				rows.Close()
 				return nil, fmt.Errorf("failed to scan booking row: %w", err)
 			}
+			bookings = append(bookings, b)
+		}
+		rows.Close()
 
-			days := int(endRent.Sub(startRent).Hours()/24) + 1
-
+		for _, b := range bookings {
+			days := int(b.EndRent.Sub(b.StartRent).Hours()/24) + 1
 			if days < 1 {
 				days = 1
 			}
@@ -139,9 +144,8 @@ func (r *CarsV2Repository) UpdateCarById(id int, req *model.UpdateCarV2Req) (*mo
 			_, err := tx.Exec(`
 				UPDATE bookings_v2
 				SET total_cost = $1
-				WHERE id = $2
-			`, newTotalCost, bookingID)
-
+				WHERE id = $2 and finished=false
+			`, newTotalCost, b.ID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update booking cost: %w", err)
 			}
@@ -152,10 +156,10 @@ func (r *CarsV2Repository) UpdateCarById(id int, req *model.UpdateCarV2Req) (*mo
 				FROM customers_v2 c
 				JOIN memberships_v2 m ON c.membership_id = m.id
 				WHERE c.id = $1
-			`, customerID).Scan(&discountPercentage)
+			`, b.CustomerID).Scan(&discountPercentage)
 
 			if err != nil {
-				discountPercentage = 0
+				discountPercentage = 0 
 			}
 
 			newDiscount := newTotalCost * (discountPercentage / 100.0)
@@ -163,18 +167,14 @@ func (r *CarsV2Repository) UpdateCarById(id int, req *model.UpdateCarV2Req) (*mo
 			_, err = tx.Exec(`
 				UPDATE bookings_v2
 				SET discount = $1
-				WHERE id = $2
-			`, newDiscount, bookingID)
-
+				WHERE id = $2 and finished=false
+			`, newDiscount, b.ID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update discount: %w", err)
 			}
 		}
 
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("rows iteration error: %w", err)
-		}
-		query += fmt.Sprintf(" daily_rent = $%d,", argIdx)
+		query += fmt.Sprintf(" daily_rent=$%d,", argIdx)
 		args = append(args, *req.DailyRent)
 		argIdx++
 	}
@@ -183,12 +183,11 @@ func (r *CarsV2Repository) UpdateCarById(id int, req *model.UpdateCarV2Req) (*mo
 		return nil, fmt.Errorf("no fields to update")
 	}
 
-	query = query[:len(query)-1]
+	query = query[:len(query)-1] 
 	query += fmt.Sprintf(" WHERE id = $%d", argIdx)
 	args = append(args, id)
 
 	_, err = tx.Exec(query, args...)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to update car: %w", err)
 	}
@@ -197,15 +196,10 @@ func (r *CarsV2Repository) UpdateCarById(id int, req *model.UpdateCarV2Req) (*mo
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	var car *model.CarV2
-
-	car, err = r.FindCarById(id)
-
+	car, err := r.FindCarById(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find car: %w", err)
 	}
-
-	
 
 	return car, nil
 }

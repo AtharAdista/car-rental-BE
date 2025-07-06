@@ -21,9 +21,22 @@ func NewBookingV2Service(bookingRepo *repository.BookingV2Repository, carsRepo *
 
 func (s *BookingV2Service) CreateBooking(req *model.CreateBookingV2Req) (int, error) {
 
+	if req.BookingTypeId == 1 {
+		req.DriverID = nil
+	}
+
+	if req.DriverID == nil {
+		req.BookingTypeId = 1
+	}
+
+
 	car, err := s.carsV2Repository.FindCarById(req.CarsID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to find car: %w", err)
+	}
+
+	if car.Stock < 1 {
+		return 0, fmt.Errorf("car is full booked")
 	}
 
 	start := req.StartRent.ToTime()

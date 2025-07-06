@@ -29,8 +29,6 @@ func (r *BookingV2Repository) CreateBooking(book *model.CreateBookingV2Req) (int
 
 	var id int
 
-	fmt.Println(book.DriverID)
-
 	err = tx.QueryRow(`
 	INSERT INTO bookings_v2 (customer_id, cars_id, booking_type_id, driver_id, start_rent, end_rent, total_cost, discount, total_driver_cost)
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -47,10 +45,14 @@ func (r *BookingV2Repository) CreateBooking(book *model.CreateBookingV2Req) (int
 	}
 
 	var dailyRent float64
+
+	
 	err = tx.QueryRow(`SELECT daily_rent FROM cars_v2 WHERE id = $1`, book.CarsID).Scan(&dailyRent)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get car daily rent: %w", err)
 	}
+	
+	
 
 	startDate := book.StartRent.ToTime().Truncate(24 * time.Hour)
 	endDate := book.EndRent.ToTime().Truncate(24 * time.Hour)
@@ -62,10 +64,12 @@ func (r *BookingV2Repository) CreateBooking(book *model.CreateBookingV2Req) (int
 
 	incentive := float64(duration) * dailyRent * 0.05
 
-	_, err = tx.Exec(`INSERT INTO drivers_incentives_v2 (booking_id, incentive)
-	VALUES ($1, $2)`, id, incentive)
-	if err != nil {
-		return 0, fmt.Errorf("failed to update car stock: %w", err)
+	if book.BookingTypeId == 2 {
+		_, err = tx.Exec(`INSERT INTO drivers_incentives_v2 (booking_id, incentive)
+		VALUES ($1, $2)`, id, incentive)
+		if err != nil {
+			return 0, fmt.Errorf("failed to update car stock: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -225,7 +229,7 @@ func (r *BookingV2Repository) UpdateBookingById(id int, req *model.UpdateBooking
 	}
 
 	query = query[:len(query)-1]
-	query += fmt.Sprintf(" WHERE id = $%d", argIdx)
+	query += fmt.Sprintf(" WHERE id = $%d and finished=false", argIdx)
 	args = append(args, id)
 
 	_, err = tx.Exec(query, args...)
@@ -251,14 +255,36 @@ func (r *BookingV2Repository) UpdateBookingById(id int, req *model.UpdateBooking
 
 		incentive := float64(duration) * dailyRent * 0.05
 
-		_, err = tx.Exec(`
-			UPDATE drivers_incentives_v2
-			SET incentive = $1
-			WHERE booking_id = $2
-		`, incentive, id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update driver incentive: %w", err)
+		if req.BookingTypeId != nil {
+			if *req.BookingTypeId == 2 && oldBooking.BookingTypeId == 2 {
+				_, err = tx.Exec(`
+					UPDATE drivers_incentives_v2
+					SET incentive = $1
+					WHERE booking_id = $2
+				`, incentive, id)
+				if err != nil {
+					return nil, fmt.Errorf("failed to update driver incentive: %w", err)
+				}
+			} else if *req.BookingTypeId == 1 && oldBooking.BookingTypeId ==2 {
+				_, err = tx.Exec(`
+					DELETE FROM drivers_incentives_v2
+					WHERE booking_id = $1
+				`, id)
+				if err != nil {
+					return nil, fmt.Errorf("failed to delete driver incentive: %w", err)
+				}
+			} else if *req.BookingTypeId == 2 && oldBooking.BookingTypeId == 1 {
+				_, err = tx.Exec(`INSERT INTO drivers_incentives_v2 (booking_id, incentive)
+				VALUES ($1, $2)`, id, incentive)
+				if err != nil {
+					return nil, fmt.Errorf("failed to insert driver incentive: %w", err)
+				}
+			}
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	var booking *model.BookingV2
@@ -267,10 +293,6 @@ func (r *BookingV2Repository) UpdateBookingById(id int, req *model.UpdateBooking
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to find booking: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return booking, nil
