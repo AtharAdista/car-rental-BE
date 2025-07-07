@@ -13,6 +13,8 @@ Link : [ERD V1 & V2](https://drive.google.com/file/d/1FBfhe8KrwiHM_vQ_WQ8EZ82Z5O
 
 Di folder archive terdapat car-rental.postman, bisa diimport ke postman.
 
+Untuk API Update, tidak harus menyertakan semua body, bisa kirim saja yang ingin diubah, tetapi ada beberapa body yang harus dikirim bersamaan agar dapat diubah.
+
 Link: [API V1 & V2](https://web.postman.co/workspace/Testing-API~08f43fd0-7405-42ef-9080-e87473e803df/collection/27782969-aba258ad-f17b-42ae-bf2b-1398711deabe?action=share&source=copy-link&creator=27782969)
 
 ## How to Run Code
